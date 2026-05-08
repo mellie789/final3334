@@ -21,12 +21,12 @@ fn main() -> anyhow::Result<()> {
     let io_percent = 0.70;  // 70% IO, 30% CPU
     
     let base_config = Config {
-        num_workers: 8,
+        num_workers: 12,
         num_tasks,
         cpu_ratio: 1.0 - io_percent,
-        arrival_spread_ms: 5000,
-        cpu_duration_ms: (20, 100),
-        io_duration_ms: (5, 30),
+        arrival_spread_ms: 1000,
+        cpu_duration_ms: (5, 15),
+        io_duration_ms: (2, 8),
         burst_mode: false,
     };
     
