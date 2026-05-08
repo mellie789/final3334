@@ -1,22 +1,22 @@
-Concurrent Task Dispatcher
+##Concurrent Task Dispatcher
 
-#How to run
+How to run:
 cd final_project
 cargo run -- release
 ===============================================================================================================================================
-#Command Examples
+Command Examples
 cargo run --release
 
 change number of task
 main.rs 
 let num_tasks = 500; //Change number for desired outcome
 ===============================================================================================================================================
-#Design Summary
+Design Summary
 Generator | Creates tasks with random arrival times | 1 |
 Dispatcher | Manages queues, implements scheduling policy | 1 |
 Workers | Execute tasks (simulated via sleep) | 8 |
 ===============================================================================================================================================
-#Experiment Summary
+Experiment Summary
 ┌────────────────────────────────────────────────────────┐
 │                    POLICY 1: FIFO                      │
 └────────────────────────────────────────────────────────┘
