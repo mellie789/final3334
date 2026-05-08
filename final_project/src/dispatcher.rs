@@ -86,75 +86,90 @@ impl Dispatcher {
     }
     
     pub fn run(&self) {
-        let (cpu_weight, io_weight) = match &self.policy {
-            SchedulingPolicy::Fifo => (1, 1),
-            SchedulingPolicy::WeightedRoundRobin { cpu_weight, io_weight } => (*cpu_weight, *io_weight),
-        };
+    let (cpu_weight, io_weight) = match &self.policy {
+        SchedulingPolicy::Fifo => (1, 1),
+        SchedulingPolicy::WeightedRoundRobin { cpu_weight, io_weight } => (*cpu_weight, *io_weight),
+    };
+    
+    let mut cpu_tokens = cpu_weight;
+    let mut io_tokens = io_weight;
+    let mut next_worker = 0;
+    
+    while !self.shutdown.load(Ordering::Relaxed) {
+        let cpu_len = self.cpu_queue.lock().unwrap().len();
+        let io_len = self.io_queue.lock().unwrap().len();
         
-        let mut cpu_tokens = cpu_weight;
-        let mut io_tokens = io_weight;
-        let mut next_worker = 0;
+        let active_count = self.worker_active.lock().unwrap().iter().filter(|&a| *a).count();
+        self.metrics.record_queue_length(cpu_len + io_len, active_count);
         
-        while !self.shutdown.load(Ordering::Relaxed) {
-            let cpu_len = self.cpu_queue.lock().unwrap().len();
-            let io_len = self.io_queue.lock().unwrap().len();
-            
-            let active_count = self.worker_active.lock().unwrap().iter().filter(|&a| *a).count();
-            self.metrics.record_queue_length(cpu_len + io_len, active_count);
-            
-            let task = match self.policy {
-                SchedulingPolicy::Fifo => {
+        // If both queues are empty, sleep and continue
+        if cpu_len == 0 && io_len == 0 {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        
+        let task = match self.policy {
+            SchedulingPolicy::Fifo => {
+                if let Some(task) = self.cpu_queue.lock().unwrap().pop_front() {
+                    Some(task)
+                } else {
+                    self.io_queue.lock().unwrap().pop_front()
+                }
+            }
+            SchedulingPolicy::WeightedRoundRobin { .. } => {
+                let mut selected = None;
+                
+                // Try CPU if tokens available AND queue not empty
+                if cpu_tokens > 0 && cpu_len > 0 {
                     if let Some(task) = self.cpu_queue.lock().unwrap().pop_front() {
-                        Some(task)
-                    } else {
-                        self.io_queue.lock().unwrap().pop_front()
+                        selected = Some(task);
+                        cpu_tokens -= 1;
                     }
                 }
-                SchedulingPolicy::WeightedRoundRobin { .. } => {
-                    let mut selected = None;
+                
+                // Try IO if tokens available AND queue not empty AND no CPU task selected
+                if selected.is_none() && io_tokens > 0 && io_len > 0 {
+                    if let Some(task) = self.io_queue.lock().unwrap().pop_front() {
+                        selected = Some(task);
+                        io_tokens -= 1;
+                    }
+                }
+                
+                // If still no task selected (tokens but empty queues, or both tokens zero)
+                if selected.is_none() {
+                    // Replenish tokens
+                    cpu_tokens = cpu_weight;
+                    io_tokens = io_weight;
                     
-                    if cpu_tokens > 0 {
+                    // Try again with replenished tokens
+                    if cpu_tokens > 0 && cpu_len > 0 {
                         if let Some(task) = self.cpu_queue.lock().unwrap().pop_front() {
                             selected = Some(task);
                             cpu_tokens -= 1;
                         }
                     }
                     
-                    if selected.is_none() && io_tokens > 0 {
+                    if selected.is_none() && io_tokens > 0 && io_len > 0 {
                         if let Some(task) = self.io_queue.lock().unwrap().pop_front() {
                             selected = Some(task);
                             io_tokens -= 1;
                         }
                     }
-                    
-                    if cpu_tokens == 0 && io_tokens == 0 {
-                        cpu_tokens = cpu_weight;
-                        io_tokens = io_weight;
-                    } else if selected.is_none() {
-                        if cpu_tokens > 0 {
-                            selected = self.cpu_queue.lock().unwrap().pop_front();
-                            if selected.is_some() { cpu_tokens -= 1; }
-                        } else if io_tokens > 0 {
-                            selected = self.io_queue.lock().unwrap().pop_front();
-                            if selected.is_some() { io_tokens -= 1; }
-                        } else {
-                            cpu_tokens = cpu_weight;
-                            io_tokens = io_weight;
-                        }
-                    }
-                    
-                    selected
                 }
-            };
-            
-            if let Some(task) = task {
-                let worker_id = next_worker;
-                next_worker = (next_worker + 1) % self.worker_senders.len();
-                if let Err(e) = self.worker_senders[worker_id].send(task) {
-                    eprintln!("Failed to send task: {}", e);
-                }
-            } else {
-                thread::sleep(Duration::from_millis(10));
+                
+                selected
+            }
+        };
+        
+        if let Some(task) = task {
+            let worker_id = next_worker;
+            next_worker = (next_worker + 1) % self.worker_senders.len();
+            if let Err(e) = self.worker_senders[worker_id].send(task) {
+                eprintln!("Failed to send task: {}", e);
+            }
+        } else {
+            // No tasks available, sleep briefly
+            thread::sleep(Duration::from_millis(10));
             }
         }
     }

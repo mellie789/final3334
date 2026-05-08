@@ -6,7 +6,6 @@ use crate::task::Task;
 
 #[derive(Default)]
 struct MetricsData {
-    total_tasks: usize,
     completed_tasks: usize,
     cpu_completed: usize,
     io_completed: usize,

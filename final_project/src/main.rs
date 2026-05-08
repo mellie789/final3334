@@ -2,7 +2,6 @@ mod task;
 mod config;
 mod metrics;
 mod generator;
-mod worker;
 mod dispatcher;
 
 use std::sync::Arc;
@@ -18,13 +17,7 @@ use generator::generate_tasks;
 use dispatcher::Dispatcher;
 
 fn main() -> anyhow::Result<()> {
-    println!("╔══════════════════════════════════════════════════════════╗");
-    println!("║     CONCURRENT TASK DISPATCHER COMPARISON               ║");
-    println!("║     FIFO vs OPTIMIZED (Weighted Round-Robin)            ║");
-    println!("╚══════════════════════════════════════════════════════════╝");
-    
-    // Configuration
-    let num_tasks = 1000;  // Can be 500, 1000, or any number >= 500
+    let num_tasks = 500;  // Can be 500, 1000, or any number >= 500
     let io_percent = 0.70;  // 70% IO, 30% CPU
     
     let base_config = Config {
@@ -54,12 +47,6 @@ fn main() -> anyhow::Result<()> {
         cpu_weight: 2, 
         io_weight: 1 
     }, "weighted_rr")?;
-    
-    println!("\n");
-    println!("╔══════════════════════════════════════════════════════════╗");
-    println!("║                     COMPARISON DONE                     ║");
-    println!("║          Check CSV files for detailed metrics           ║");
-    println!("╚══════════════════════════════════════════════════════════╝");
     
     Ok(())
 }
